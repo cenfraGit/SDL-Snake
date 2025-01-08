@@ -1,25 +1,27 @@
 #include "game.h"
 
+
+bool running = true;
+int last_frame_time = 0;
+float time_delta;
+const unsigned char* keys;
 SDL_Window* window = NULL;
 SDL_Renderer* renderer = NULL;
 TTF_Font* font = NULL;
 SDL_Color text_color = {255, 255, 255, 255};
-bool running = true;
-const unsigned char* keys;
-int last_frame_time = 0;
-float time_delta;
+
+int score_points = 0;
+char* score_str;
 
 int snake_length = SNAKE_STARTINGLENGTH;
 Node* snake_node_head = NULL;
 Node* snake_node_tail = NULL;
-Direction snake_direction_current = RIGHT;
-Direction snake_direction_previous = -1;
+Direction snake_direction_current;
+Direction snake_direction_previous;
 
-int apple_x = -1;
-int apple_y = -1;
+int apple_x;
+int apple_y;
 
-int score_points = 0;
-char* score_str;
 
 void initialize(void) {
   if (SDL_Init(SDL_INIT_EVERYTHING) < 0) {
@@ -73,6 +75,9 @@ void setup(void) {
   snake_node_tail->next = NULL;
   snake_node_head->previous = NULL;
   snake_node_head->next = snake_node_tail;
+
+  snake_direction_current = RIGHT;
+  snake_direction_previous = -1;
 
   apple_update_coords();
 }
@@ -128,8 +133,18 @@ void update(void) {
       ++score_points;
     }
 
-    if (check_snake_body_collision()) {
-      puts("collision");
+    if (check_snake_body_collision() || check_snake_border_collision()) {
+      // restart score
+      score_points = 0;
+      // free snake
+      Node* current = snake_node_head;
+      while (current != NULL) {
+	Node* temp = current->next;
+	free(current);
+	current = temp;
+      }
+      // restart
+      setup();
     }
 
 }
@@ -153,8 +168,9 @@ void render(void) {
     temp = temp->next; 
   }
 
-  SDL_RenderSetScale(renderer, 4, 4);
+  SDL_RenderSetScale(renderer, SCALE, SCALE);
 
+  // snake head point
   SDL_SetRenderDrawColor(renderer, 255, 0, 0, 255);
   SDL_RenderDrawPoint(renderer, snake_node_head->x, snake_node_head->y);
 
@@ -260,6 +276,8 @@ Node* snake_create_node(int x, int y) {
   return new_node;
 }
 
+// this function inserts a node when the snake changes direction,
+// therefore inserting it directly after the snake's head.
 void snake_insert_node_change_direction(void) {
   Node* new_node = snake_create_node(snake_node_head->x, snake_node_head->y);
   new_node->next = snake_node_head->next;
@@ -291,13 +309,6 @@ void snake_enlarge(void) {
   }
 }
 
-void apple_update_coords(void) {
-  apple_x = rand() % SCR_WIDTH - APPLE_WIDTH;
-  apple_y = rand() % SCR_HEIGHT- APPLE_HEIGHT;
-  apple_x /= 4;
-  apple_y /= 4;
-}
-
 // returns 1 if snake head collided with apple, 0 otherwise
 int check_snake_apple_collision(void) {
   int x = snake_node_head->x;
@@ -307,21 +318,56 @@ int check_snake_apple_collision(void) {
   return 0;
 }
 
+// returns 1 if the snake's head touches its own body.
 int check_snake_body_collision(void) {
+  Node* current = snake_node_head -> next;
+  int x_head = snake_node_head->x;
+  int y_head = snake_node_head->y;
+  int x, y, x_next, y_next, coord_min, coord_max;
+  while (current->next != NULL) {
+    x = current->x;
+    y = current->y;
+    x_next = current->next->x;
+    y_next = current->next->y;
 
-  if (snake_node_head->x < 0 || snake_node_head->x >= SCR_WIDTH/4 ||
-      snake_node_head->y < 0 || snake_node_head->y >= SCR_HEIGHT/4) {
-    return 1; 
-  }
-
-    Node* current = snake_node_head->next;
-    while (current != NULL) {
-        if (snake_node_head->x == current->x && snake_node_head->y == current->y) {
-            return 1;
-        }
-        current = current->next;
+    // if vertical line
+    if (x == x_next) {
+      coord_min = get_min(y, y_next);
+      coord_max = get_max(y, y_next);
+      // if snake head is touching line
+      if (x_head == x && y_head >= coord_min && y_head <= coord_max) {
+	return 1;
+      }
+    } else if (y == y_next) { // if horizontal line
+      coord_min = get_min(x, x_next);
+      coord_max = get_max(x, x_next);
+      // if snake head is touching line
+      if (y_head == y && x_head >= coord_min && x_head <= coord_max) {
+	return 1;
+      }
     }
-    return 0; // No collision
+    current = current->next;
+  }
+  return 0;
+}
+
+// returns 1 if snake touches any border from the screen.
+int check_snake_border_collision(void) {
+  int x_head = snake_node_head->x;
+  int y_head = snake_node_head->y;
+  if (0 > x_head || x_head > SCR_WIDTH/SCALE ||
+      0 > y_head || y_head > SCR_HEIGHT/SCALE) {
+    return 1;
+  }
+  return 0;
+}
+
+// randomly updates the apple's coordinate.
+void apple_update_coords(void) {
+  apple_x = rand() % SCR_WIDTH - APPLE_WIDTH;
+  apple_y = rand() % SCR_HEIGHT- APPLE_HEIGHT;
+  apple_x /= SCALE;
+  apple_y /= SCALE;
 }
 
 // this function returns the number of digits needed to write a
@@ -335,4 +381,11 @@ int get_digits_amount(int number) {
         digits++;
     }
     return digits;
+}
+
+int get_min(int num1, int num2) {
+  return (num1 > num2) ? num2 : num1;
+}
+int get_max(int num1, int num2) {
+  return (num1 > num2) ? num1 : num2;
 }
